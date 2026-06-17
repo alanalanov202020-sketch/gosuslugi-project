@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QazTech — АРМ Реинжиниринга Госуслуг</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#eff6ff', 100:'#dbeafe', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8', 900:'#1e3a8a' }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+      html { scroll-behavior: auto; }
+    }
+    .fade-up { animation: fadeUp .35s ease both; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .hero-grid {
+      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,.08) 1px, transparent 0);
+      background-size: 32px 32px;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans antialiased">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ────────── SVG Icons ────────── */
+const Ico = ({ d, size=20, cls='' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cls}>
+    {Array.isArray(d) ? d.map((p,i)=><path key={i} d={p}/>) : <path d={d}/>}
+  </svg>
+);
+const icons = {
+  chevron:    'M9 18l6-6-6-6',
+  x:          'M18 6 6 18M6 6l12 12',
+  menu:       'M4 6h16M4 12h16M4 18h16',
+  upload:     'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+  fileCheck:  'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4',
+  trash:      ['M3 6h18','M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'],
+  check:      'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3',
+  alert:      'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 8v4M12 16h.01',
+  info:       'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 16v-4M12 8h.01',
+  zap:        'M13 2 3 14h9l-1 8 10-12h-9l1-8z',
+  clock:      ['M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z','M12 6v6l4 2'],
+  shield:     'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+  globe:      ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z','M2 12h20','M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'],
+  users:      ['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2','M23 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75','M9 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8z'],
+  fileText:   ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6','M16 13H8','M16 17H8','M10 9H8'],
+  arrowRight: 'M5 12h14M12 5l7 7-7 7',
+  star:       'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
+};
+
+/* ────────── Mock data ────────── */
+const SPHERES = ['Телекоммуникации','Аэрокосмос','Госуслуги'];
+const FUNCTIONS_BY_SPHERE = {
+  Телекоммуникации: ['Выдача лицензий на радиочастоты','Регулирование тарифов операторов','Контроль качества связи','Сертификация оборудования'],
+  Аэрокосмос: ['Лицензирование космической деятельности','Управление орбитальными слотами','Сертификация воздушных судов','Контроль использования воздушного пространства'],
+  Госуслуги: ['Регистрация юридических лиц','Выдача разрешительных документов','Предоставление социальных льгот','Ведение государственных реестров'],
+};
+const PROCESSES_BY_SPHERE = {
+  Телекоммуникации: ['Выдача разрешений на строительство базовых станций','Присвоение номерного ресурса операторам','Регистрация абонентских устройств'],
+  Аэрокосмос: ['Выдача свидетельств пилота','Регистрация воздушных судов','Согласование полётных планов'],
+  Госуслуги: ['Выдача лицензий на медицинскую деятельность','Регистрация актов гражданского состояния','Постановка на учёт транспортных средств','Оформление земельных участков в собственность'],
+};
+const TARGET_EFFECTS = [
+  'Сокращение срока оказания',
+  'Исключение бумажных документов',
+  'Исключение человеческого фактора (автоматическое решение AI/роботом)',
+  'Межведомственная интеграция ИС',
+];
+const APPLICANT = {
+  organ: 'Министерство цифрового развития, инноваций и аэрокосмической промышленности',
+  department: 'Департамент трансформации госуслуг',
+  name: 'Иванов И. И.',
+  email: 'ivanov@gov.kz',
+  phone: '+7 777 777-77-77',
+};
+
+const FEATURES = [
+  { icon:'zap',       title:'Быстрое оформление',     desc:'Форма заполняется за 5–7 минут благодаря умным справочникам и автоподбору данных.' },
+  { icon:'shield',    title:'Безопасность данных',     desc:'Передача данных защищена по стандартам электронного правительства Казахстана.' },
+  { icon:'globe',     title:'Межведомственная интеграция', desc:'Справочники функций и процессов подтягиваются из единого реестра по Smart Bridge.' },
+  { icon:'clock',     title:'Отслеживание статуса',    desc:'Полный цикл: Черновик → Регистрация → Экспертиза → Решение — всё в одном окне.' },
+  { icon:'users',     title:'Удобство для сотрудников',desc:'Данные заявителя заполняются автоматически из SSO-профиля — никакого ручного ввода.' },
+  { icon:'fileText',  title:'Структурированные данные',desc:'Заявка сразу пригодна для аналитики без дополнительной ручной обработки.' },
+];
+
+const STATS = [
+  { value:'5–7 мин', label:'Среднее время заполнения' },
+  { value:'<5%',     label:'Отклонений из-за ошибок' },
+  { value:'100%',    label:'Заявок с обеими BPMN-схемами' },
+  { value:'4',       label:'Целевых эффекта реинжиниринга' },
+];
+
+const STEPS = [
+  { num:'01', title:'Авторизация', desc:'Сотрудник входит через корпоративный SSO — данные подтягиваются автоматически.' },
+  { num:'02', title:'Классификация', desc:'Выбирает сферу, функции и кейс из связанных справочников госоргана.' },
+  { num:'03', title:'Описание', desc:'Указывает целевое название, эффекты и суть изменений процесса.' },
+  { num:'04', title:'BPMN-схемы', desc:'Прикладывает схемы AS IS и TO BE в формате .bpmn.' },
+  { num:'05', title:'Отправка', desc:'Система валидирует, присваивает номер и переводит заявку в статус «Отправлено».' },
+];
+
+/* ────────── Small UI atoms ────────── */
+function FieldError({ msg }) {
+  if (!msg) return null;
+  return (
+    <p className="mt-1 flex items-center gap-1 text-xs text-red-600" role="alert">
+      <Ico d={icons.alert} size={13} cls="shrink-0 text-red-500" />{msg}
+    </p>
+  );
+}
+
+function Chip({ label, onRemove }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
+      {label}
+      <button type="button" onClick={onRemove} className="ml-1 text-blue-500 hover:text-blue-900" aria-label={`Убрать ${label}`}>
+        <Ico d={icons.x} size={11} />
+      </button>
+    </span>
+  );
+}
+
+function Toast({ type, message, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 4500); return ()=>clearTimeout(t); }, [onClose]);
+  const cfg = {
+    success:{ bg:'bg-green-50 border-green-300', tx:'text-green-800', ic:<Ico d={icons.check} size={18} cls="text-green-600 shrink-0"/> },
+    error:  { bg:'bg-red-50 border-red-300',   tx:'text-red-800',   ic:<Ico d={icons.alert} size={18} cls="text-red-600 shrink-0"/> },
+    info:   { bg:'bg-blue-50 border-blue-300',  tx:'text-blue-800',  ic:<Ico d={icons.info}  size={18} cls="text-blue-600 shrink-0"/> },
+  }[type];
+  return (
+    <div className={`fixed top-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-xl fade-up ${cfg.bg}`} role="alert" aria-live="assertive">
+      {cfg.ic}
+      <p className={`text-sm leading-snug ${cfg.tx}`}>{message}</p>
+      <button onClick={onClose} className="ml-auto opacity-50 hover:opacity-100"><Ico d={icons.x} size={15}/></button>
+    </div>
+  );
+}
+
+function Dropzone({ label, file, onFile, onRemove, error }) {
+  const ref = useRef(null);
+  const [drag, setDrag] = useState(false);
+  function pick(f) {
+    if (!f) return;
+    if (!f.name.endsWith('.bpmn')) onFile(null,'Допускается только файл .bpmn');
+    else onFile(f, null);
+  }
+  function fmt(b) {
+    if (b<1024) return `${b} Б`;
+    if (b<1048576) return `${(b/1024).toFixed(1)} КБ`;
+    return `${(b/1048576).toFixed(1)} МБ`;
+  }
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-gray-700">{label}</p>
+      {file ? (
+        <div className="flex items-center gap-3 rounded-xl border border-green-300 bg-green-50 px-4 py-3">
+          <Ico d={icons.fileCheck} size={20} cls="shrink-0 text-green-600"/>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+            <p className="text-xs text-gray-500">{fmt(file.size)}</p>
+          </div>
+          <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-500" aria-label="Удалить">
+            <Ico d={icons.trash} size={16}/>
+          </button>
+        </div>
+      ) : (
+        <div
+          onDragOver={e=>{e.preventDefault();setDrag(true);}}
+          onDragLeave={()=>setDrag(false)}
+          onDrop={e=>{e.preventDefault();setDrag(false);pick(e.dataTransfer.files[0]);}}
+          onClick={()=>ref.current?.click()}
+          onKeyDown={e=>e.key==='Enter'&&ref.current?.click()}
+          tabIndex={0} role="button" aria-label={`Загрузить: ${label}`}
+          className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all focus-visible:outline ${
+            drag ? 'border-blue-400 bg-blue-50 scale-[1.01]' :
+            error ? 'border-red-300 bg-red-50' :
+            'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50'
+          }`}
+        >
+          <Ico d={icons.upload} size={28} cls="mb-2 text-gray-400"/>
+          <p className="text-sm text-gray-600">Перетащите или <span className="text-blue-600 underline">выберите файл</span></p>
+          <p className="mt-1 text-xs text-gray-400">Только .bpmn</p>
+          <input ref={ref} type="file" accept=".bpmn" className="hidden" onChange={e=>pick(e.target.files[0])} aria-hidden/>
+        </div>
+      )}
+      <FieldError msg={error}/>
+    </div>
+  );
+}
+
+/* ────────── Navbar ────────── */
+function Navbar({ onNav }) {
+  const [open, setOpen] = useState(false);
+  const links = [
+    { href:'#about',   label:'О системе' },
+    { href:'#how',     label:'Как работает' },
+    { href:'#stats',   label:'Метрики' },
+    { href:'#form',    label:'Подать заявку' },
+  ];
+  return (
+    <header className="fixed top-0 left-0 right-0 z-40 border-b border-white/20 bg-white/90 backdrop-blur-md shadow-sm">
+      <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3" aria-label="Главная навигация">
+        <a href="#hero" className="flex items-center gap-2 group">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-bold shadow-sm group-hover:bg-blue-700 transition-colors">ГУ</div>
+          <div className="leading-tight">
+            <p className="text-sm font-bold text-gray-900">QazTech АРМ</p>
+            <p className="text-xs text-gray-400 hidden sm:block">Реинжиниринг госуслуг</p>
+          </div>
+        </a>
+        {/* Desktop links */}
+        <ul className="hidden md:flex items-center gap-1">
+          {links.map(l => (
+            <li key={l.href}>
+              <a href={l.href} className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+                {l.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a href="#form" className="hidden md:inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
+          Создать заявку <Ico d={icons.arrowRight} size={15}/>
+        </a>
+        {/* Mobile burger */}
+        <button onClick={()=>setOpen(o=>!o)} className="md:hidden rounded-lg p-2 text-gray-600 hover:bg-gray-100" aria-label="Меню">
+          <Ico d={open ? icons.x : icons.menu} size={22}/>
+        </button>
+      </nav>
+      {/* Mobile menu */}
+      {open && (
+        <div className="md:hidden border-t border-gray-100 bg-white px-4 py-3 shadow-lg fade-up">
+          <ul className="space-y-1">
+            {links.map(l => (
+              <li key={l.href}>
+                <a href={l.href} onClick={()=>setOpen(false)}
+                  className="block rounded-lg px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+                  {l.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <a href="#form" onClick={()=>setOpen(false)}
+            className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">
+            Создать заявку <Ico d={icons.arrowRight} size={15}/>
+          </a>
+        </div>
+      )}
+    </header>
+  );
+}
+
+/* ────────── Hero ────────── */
+function Hero() {
+  return (
+    <section id="hero" className="hero-grid relative overflow-hidden bg-gradient-to-br from-blue-900 via-blue-700 to-blue-500 pt-24 pb-20 text-white">
+      <div className="mx-auto max-w-5xl px-4 text-center">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-medium text-blue-100 backdrop-blur-sm">
+          <Ico d={icons.star} size={13} cls="text-amber-300"/>
+          Платформа QazTech · Версия 1.0
+        </div>
+        <h1 className="mb-5 text-3xl font-extrabold leading-tight sm:text-5xl">
+          АРМ Сотрудника Госоргана<br/>
+          <span className="text-blue-200">Подача заявок на реинжиниринг</span>
+        </h1>
+        <p className="mx-auto mb-8 max-w-2xl text-base text-blue-100 sm:text-lg leading-relaxed">
+          Цифровая платформа для формализации и подачи заявок на экспертизу реинжиниринга государственных процессов и услуг в единой системе Казахстана.
+        </p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a href="#form"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-blue-700 shadow-lg hover:bg-blue-50 transition-colors">
+            Создать заявку <Ico d={icons.arrowRight} size={16} cls="text-blue-600"/>
+          </a>
+          <a href="#about"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 py-3 text-sm font-medium text-white hover:bg-white/20 transition-colors backdrop-blur-sm">
+            Узнать больше
+          </a>
+        </div>
+      </div>
+      {/* Decorative blobs */}
+      <div className="pointer-events-none absolute -top-16 -right-16 h-64 w-64 rounded-full bg-white/5 blur-3xl"/>
+      <div className="pointer-events-none absolute -bottom-20 -left-20 h-80 w-80 rounded-full bg-blue-400/20 blur-3xl"/>
+    </section>
+  );
+}
+
+/* ────────── Stats ────────── */
+function Stats() {
+  return (
+    <section id="stats" className="bg-blue-600 py-12 text-white">
+      <div className="mx-auto max-w-5xl px-4">
+        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+          {STATS.map(s => (
+            <div key={s.label} className="text-center">
+              <p className="text-3xl font-extrabold text-white sm:text-4xl">{s.value}</p>
+              <p className="mt-1 text-sm text-blue-100">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────── Features ────────── */
+function About() {
+  return (
+    <section id="about" className="py-20 bg-white">
+      <div className="mx-auto max-w-5xl px-4">
+        <div className="mb-12 text-center">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-blue-600">О системе</p>
+          <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">Всё для удобной цифровой трансформации</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-gray-500">
+            Система устраняет неструктурированный документооборот и даёт сотруднику единый инструмент для инициирования реинжиниринга.
+          </p>
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map(f => (
+            <div key={f.title} className="group rounded-2xl border border-gray-100 bg-gray-50 p-6 transition-all hover:border-blue-200 hover:bg-blue-50 hover:shadow-md">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-200 transition-colors">
+                <Ico d={icons[f.icon]} size={22}/>
+              </div>
+              <h3 className="mb-2 font-semibold text-gray-900">{f.title}</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────── How it works ────────── */
+function HowItWorks() {
+  return (
+    <section id="how" className="py-20 bg-gray-50">
+      <div className="mx-auto max-w-4xl px-4">
+        <div className="mb-12 text-center">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-blue-600">Процесс</p>
+          <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">Как подать заявку</h2>
+        </div>
+        <div className="relative space-y-0">
+          {/* Vertical line */}
+          <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-blue-100 sm:left-10" aria-hidden/>
+          {STEPS.map((s, i) => (
+            <div key={s.num} className="relative flex gap-6 pb-10 last:pb-0">
+              <div className="relative z-10 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-4 border-white bg-blue-600 text-white font-bold text-sm shadow-lg">
+                {s.num}
+              </div>
+              <div className="pt-3">
+                <h3 className="font-semibold text-gray-900 text-lg">{s.title}</h3>
+                <p className="mt-1 text-gray-500 text-sm leading-relaxed">{s.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────── Form section ────────── */
+const EMPTY = { sphere:'', functions:[], process:'', toBeTitle:'', effects:[], description:'', asIsFile:null, toBeFile:null };
+const EMPTY_ERR = { sphere:'', functions:'', process:'', toBeTitle:'', effects:'', description:'', asIsFile:'', toBeFile:'' };
+
+function FormSection() {
+  const [form, setForm] = useState(EMPTY);
+  const [errs, setErrs] = useState(EMPTY_ERR);
+  const [submitted, setSubmitted] = useState(false);
+  const [reqNum, setReqNum] = useState('');
+  const [toast, setToast] = useState(null);
+  const [sphereOpen, setSphereOpen] = useState(false);
+  const [funcOpen, setFuncOpen]   = useState(false);
+  const [sugs, setSugs] = useState([]);
+  const [showSug, setShowSug] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const sphRef = useRef(null);
+  const fnRef  = useRef(null);
+  const sugRef = useRef(null);
+
+  useEffect(() => {
+    function h(e) {
+      if (sphRef.current && !sphRef.current.contains(e.target)) setSphereOpen(false);
+      if (fnRef.current  && !fnRef.current.contains(e.target))  setFuncOpen(false);
+      if (sugRef.current && !sugRef.current.contains(e.target)) setShowSug(false);
+    }
+    document.addEventListener('mousedown', h);
+    return ()=>document.removeEventListener('mousedown', h);
+  }, []);
+
+  function set(f, v) {
+    setForm(x=>({...x,[f]:v}));
+    setErrs(e=>({...e,[f]:''}));
+  }
+  function selSphere(s) {
+    setForm(x=>({...x, sphere:s, functions:[], process:''}));
+    setErrs(e=>({...e, sphere:'', functions:'', process:''}));
+    setSphereOpen(false);
+  }
+  function togFn(fn) {
+    setForm(x=>({...x, functions: x.functions.includes(fn) ? x.functions.filter(f=>f!==fn) : [...x.functions, fn]}));
+    setErrs(e=>({...e, functions:''}));
+  }
+  function togEff(ef) {
+    setForm(x=>({...x, effects: x.effects.includes(ef) ? x.effects.filter(f=>f!==ef) : [...x.effects, ef]}));
+    setErrs(e=>({...e, effects:''}));
+  }
+  function onProc(val) {
+    set('process', val);
+    if (form.sphere && val) {
+      const list = (PROCESSES_BY_SPHERE[form.sphere]||[]).filter(p=>p.toLowerCase().includes(val.toLowerCase()));
+      setSugs(list); setShowSug(list.length>0);
+    } else setShowSug(false);
+  }
+  function setFile(field, file, err) {
+    setForm(x=>({...x,[field]:file}));
+    setErrs(e=>({...e,[field]:err||''}));
+  }
+  function validate(forSend) {
+    const e={...EMPTY_ERR}; let ok=true;
+    if (!form.sphere)             { e.sphere='Выберите сферу'; ok=false; }
+    if (!form.functions.length)   { e.functions='Выберите минимум одну функцию'; ok=false; }
+    if (!form.process.trim())     { e.process='Укажите кейс / процесс'; ok=false; }
+    if (!form.toBeTitle.trim())   { e.toBeTitle='Укажите название TO BE'; ok=false; }
+    if (!form.effects.length)     { e.effects='Выберите минимум один эффект'; ok=false; }
+    if (!form.description.trim()) { e.description='Заполните описание'; ok=false; }
+    if (forSend && !form.asIsFile){ e.asIsFile='Прикрепите схему AS IS'; ok=false; }
+    if (forSend && !form.toBeFile){ e.toBeFile='Прикрепите схему TO BE'; ok=false; }
+    setErrs(e); return ok;
+  }
+  async function saveDraft() {
+    setSaving(true);
+    await new Promise(r=>setTimeout(r,700));
+    setSaving(false);
+    setToast({type:'info', message:'Черновик сохранён.'});
+  }
+  async function submit() {
+    if (!validate(true)) { setToast({type:'error', message:'Проверьте заполнение всех обязательных полей.'}); return; }
+    setSending(true);
+    await new Promise(r=>setTimeout(r,1100));
+    setSending(false);
+    const num = `№${new Date().getFullYear()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    setReqNum(num); setSubmitted(true);
+    setToast({type:'success', message:`Заявка ${num} отправлена на экспертизу.`});
+  }
+  function cancel() {
+    setForm(EMPTY); setErrs(EMPTY_ERR); setSubmitted(false); setReqNum('');
+    setToast({type:'info', message:'Форма очищена.'});
+  }
+
+  const avFns = FUNCTIONS_BY_SPHERE[form.sphere]||[];
+
+  const inputCls = (err) =>
+    `w-full rounded-xl border px-4 py-2.5 text-sm transition-colors focus-visible:outline focus-visible:outline-blue-500 ${
+      err ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white hover:border-blue-300 focus:border-blue-500'
+    }`;
+
+  const dropBtn = (err, disabled) =>
+    `flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-sm text-left transition-colors focus-visible:outline focus-visible:outline-blue-500 ${
+      disabled ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400' :
+      err ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white hover:border-blue-300'
+    }`;
+
+  return (
+    <section id="form" className="py-20 bg-white">
+      <div className="mx-auto max-w-4xl px-4">
+        {toast && <Toast type={toast.type} message={toast.message} onClose={()=>setToast(null)}/>}
+
+        <div className="mb-10 text-center">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-blue-600">Заявка</p>
+          <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">Подача заявки на экспертизу</h2>
+          <p className="mt-3 text-gray-500">Заполните форму — данные сразу поступят на рассмотрение эксперту.</p>
+        </div>
+
+        {/* Status badge + lifecycle */}
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <span className={`rounded-full px-3 py-1.5 text-xs font-semibold border ${
+            submitted ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-gray-300 bg-gray-100 text-gray-600'
+          }`}>
+            {submitted ? '✓ Отправлено' : '● Черновик'}
+          </span>
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            {['Черновик','Регистрация','Экспертиза','Решение'].map((s,i)=>(
+              <React.Fragment key={s}>
+                {i>0 && <Ico d={icons.chevron} size={12} cls="text-gray-300"/>}
+                <span className={i===0 ? 'font-semibold text-blue-600' : ''}>{s}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+
+          {/* Applicant */}
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/60 overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-4 flex items-center gap-2">
+              <Ico d={icons.users} size={16} cls="text-blue-500"/>
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Данные заявителя</h3>
+            </div>
+            <div className="px-6 py-5 grid gap-4 sm:grid-cols-3">
+              {[
+                { label:'Госорган', value:APPLICANT.organ },
+                { label:'Департамент', value:APPLICANT.department },
+                { label:'Сотрудник', value:APPLICANT.name, sub:`${APPLICANT.email} · ${APPLICANT.phone}` },
+              ].map(c=>(
+                <div key={c.label} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">{c.label}</p>
+                  <p className="text-sm font-semibold text-gray-900 leading-snug">{c.value}</p>
+                  {c.sub && <p className="mt-0.5 text-xs text-gray-400">{c.sub}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Classification */}
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/60 overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-4 flex items-center gap-2">
+              <Ico d={icons.globe} size={16} cls="text-blue-500"/>
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Классификация</h3>
+            </div>
+            <div className="px-6 py-5 space-y-5">
+
+              {/* Sphere */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Сфера деятельности <span className="text-red-500">*</span>
+                </label>
+                <div className="relative" ref={sphRef}>
+                  <button type="button" onClick={()=>setSphereOpen(o=>!o)}
+                    className={dropBtn(errs.sphere, false)}
+                    aria-haspopup="listbox" aria-expanded={sphereOpen}>
+                    <span className={form.sphere ? 'text-gray-900' : 'text-gray-400'}>
+                      {form.sphere || 'Выберите сферу...'}
+                    </span>
+                    <Ico d={icons.chevron} size={16} cls={`text-gray-400 transition-transform duration-200 ${sphereOpen?'rotate-90':''}`}/>
+                  </button>
+                  {sphereOpen && (
+                    <ul className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden fade-up" role="listbox">
+                      {SPHERES.map(s=>(
+                        <li key={s} role="option" aria-selected={form.sphere===s}
+                          onClick={()=>selSphere(s)}
+                          className={`cursor-pointer px-4 py-3 text-sm transition-colors hover:bg-blue-50 ${form.sphere===s?'bg-blue-100 font-semibold text-blue-800':'text-gray-800'}`}>
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <FieldError msg={errs.sphere}/>
+              </div>
+
+              {/* Functions */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Государственная функция <span className="text-red-500">*</span>
+                </label>
+                {form.functions.length>0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {form.functions.map(fn=><Chip key={fn} label={fn} onRemove={()=>togFn(fn)}/>)}
+                  </div>
+                )}
+                <div className="relative" ref={fnRef}>
+                  <button type="button" onClick={()=>form.sphere&&setFuncOpen(o=>!o)}
+                    disabled={!form.sphere}
+                    className={dropBtn(errs.functions, !form.sphere)}
+                    aria-haspopup="listbox" aria-expanded={funcOpen}>
+                    <span className="text-gray-400">{form.sphere?'Добавить функции...':'Сначала выберите сферу'}</span>
+                    <Ico d={icons.chevron} size={16} cls={`text-gray-400 transition-transform duration-200 ${funcOpen?'rotate-90':''}`}/>
+                  </button>
+                  {funcOpen && (
+                    <ul className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden fade-up" role="listbox" aria-multiselectable>
+                      {avFns.map(fn=>{
+                        const sel=form.functions.includes(fn);
+                        return (
+                          <li key={fn} role="option" aria-selected={sel} onClick={()=>togFn(fn)}
+                            className={`flex cursor-pointer items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-blue-50 ${sel?'bg-blue-50 font-medium text-blue-800':'text-gray-800'}`}>
+                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${sel?'border-blue-600 bg-blue-600':'border-gray-300'}`}>
+                              {sel && <span className="block h-2 w-2 rounded-sm bg-white"/>}
+                            </span>
+                            {fn}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <FieldError msg={errs.functions}/>
+              </div>
+
+              {/* Process */}
+              <div>
+                <label htmlFor="process" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Государственный кейс / Процесс <span className="text-red-500">*</span>
+                </label>
+                <div className="relative" ref={sugRef}>
+                  <input id="process" type="text" value={form.process}
+                    onChange={e=>onProc(e.target.value)}
+                    onFocus={()=>{
+                      if(form.sphere&&form.process){
+                        const l=(PROCESSES_BY_SPHERE[form.sphere]||[]).filter(p=>p.toLowerCase().includes(form.process.toLowerCase()));
+                        setSugs(l);setShowSug(l.length>0);
+                      }
+                    }}
+                    placeholder="Введите или выберите процесс..."
+                    disabled={!form.sphere}
+                    className={inputCls(errs.process) + (!form.sphere?' cursor-not-allowed bg-gray-100 text-gray-400':'')}
+                  />
+                  {showSug && (
+                    <ul className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden fade-up">
+                      {sugs.map(p=>(
+                        <li key={p} onClick={()=>{set('process',p);setShowSug(false);}}
+                          className="cursor-pointer px-4 py-3 text-sm text-gray-800 hover:bg-blue-50">{p}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <FieldError msg={errs.process}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Reengineering */}
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/60 overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-4 flex items-center gap-2">
+              <Ico d={icons.zap} size={16} cls="text-blue-500"/>
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Описание реинжиниринга</h3>
+            </div>
+            <div className="px-6 py-5 space-y-5">
+
+              <div>
+                <label htmlFor="toBeTitle" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Название процесса TO BE <span className="text-red-500">*</span>
+                </label>
+                <input id="toBeTitle" type="text" value={form.toBeTitle}
+                  onChange={e=>set('toBeTitle',e.target.value)}
+                  placeholder="Например: Автоматизированная выдача лицензий..."
+                  className={inputCls(errs.toBeTitle)}
+                />
+                <FieldError msg={errs.toBeTitle}/>
+              </div>
+
+              <fieldset>
+                <legend className="mb-2 text-sm font-medium text-gray-700">
+                  Целевые эффекты <span className="text-red-500">*</span>
+                </legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {TARGET_EFFECTS.map(ef=>{
+                    const ch=form.effects.includes(ef);
+                    return (
+                      <label key={ef} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all ${ch?'border-blue-300 bg-blue-50':'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40'}`}>
+                        <input type="checkbox" checked={ch} onChange={()=>togEff(ef)} className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"/>
+                        <span className="text-sm text-gray-800 leading-snug">{ef}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <FieldError msg={errs.effects}/>
+              </fieldset>
+
+              <div>
+                <label htmlFor="desc" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Описание изменений <span className="text-red-500">*</span>
+                </label>
+                <textarea id="desc" rows={5} value={form.description}
+                  onChange={e=>set('description',e.target.value)}
+                  placeholder="Опишите текущее состояние процесса, предлагаемые изменения и ожидаемый результат реинжиниринга..."
+                  className={inputCls(errs.description) + ' resize-y'}
+                />
+                <FieldError msg={errs.description}/>
+              </div>
+            </div>
+          </div>
+
+          {/* BPMN */}
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/60 overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-4 flex items-center gap-2">
+              <Ico d={icons.fileText} size={16} cls="text-blue-500"/>
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">BPMN-схемы процесса</h3>
+            </div>
+            <div className="px-6 py-5 grid gap-6 sm:grid-cols-2">
+              <Dropzone label='Схема "КАК ЕСТЬ" (AS IS)' file={form.asIsFile}
+                onFile={(f,e)=>setFile('asIsFile',f,e)} onRemove={()=>setFile('asIsFile',null,null)} error={errs.asIsFile}/>
+              <Dropzone label='Схема "КАК БУДЕТ" (TO BE)' file={form.toBeFile}
+                onFile={(f,e)=>setFile('toBeFile',f,e)} onRemove={()=>setFile('toBeFile',null,null)} error={errs.toBeFile}/>
+            </div>
+          </div>
+
+          {/* Actions */}
+          {submitted ? (
+            <div className="flex flex-col items-center gap-5 rounded-2xl border border-green-200 bg-green-50 px-6 py-12 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100 shadow-inner">
+                <Ico d={icons.check} size={40} cls="text-green-600"/>
+              </div>
+              <div>
+                <p className="text-xl font-bold text-green-800">Заявка успешно отправлена!</p>
+                <p className="mt-1 text-sm text-green-700">Регистрационный номер: <span className="font-mono font-bold">{reqNum}</span></p>
+                <p className="mt-1 text-xs text-green-600">Вы получите уведомление при изменении статуса заявки.</p>
+              </div>
+              <button type="button" onClick={cancel}
+                className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 transition-colors">
+                Создать новую заявку
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
+              <button type="button" onClick={submit} disabled={sending}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 transition-colors disabled:opacity-60">
+                {sending
+                  ? <><span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin"/>Отправка...</>
+                  : <><Ico d={icons.arrowRight} size={15}/>Отправить на экспертизу</>
+                }
+              </button>
+              <button type="button" onClick={saveDraft} disabled={saving}
+                className="rounded-xl border border-gray-200 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-60">
+                {saving ? 'Сохранение...' : 'Сохранить черновик'}
+              </button>
+              <button type="button" onClick={cancel}
+                className="text-sm text-gray-400 underline underline-offset-2 hover:text-gray-700 transition-colors">
+                Отмена
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────── Footer ────────── */
+function Footer() {
+  return (
+    <footer className="bg-gray-900 text-gray-400 py-10">
+      <div className="mx-auto max-w-5xl px-4">
+        <div className="grid gap-8 sm:grid-cols-3 mb-8">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold">ГУ</div>
+              <span className="font-bold text-white">QazTech АРМ</span>
+            </div>
+            <p className="text-sm leading-relaxed">Платформа цифровой трансформации государственных услуг Казахстана.</p>
+          </div>
+          <div>
+            <p className="mb-3 text-sm font-semibold text-white">Навигация</p>
+            <ul className="space-y-2 text-sm">
+              {[['#about','О системе'],['#how','Как работает'],['#stats','Метрики'],['#form','Подать заявку']].map(([h,l])=>(
+                <li key={h}><a href={h} className="hover:text-white transition-colors">{l}</a></li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="mb-3 text-sm font-semibold text-white">Контакты</p>
+            <ul className="space-y-2 text-sm">
+              <li>support@qaztech.gov.kz</li>
+              <li>+7 (7172) 74-94-87</li>
+              <li>г. Астана, ул. Орынбор, 8</li>
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+          <p>© 2026 Министерство цифрового развития РК · QazTech Platform</p>
+          <p>Версия 1.0 · PRD rev. 1.0</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ────────── App ────────── */
+function App() {
+  return (
+    <>
+      <Navbar/>
+      <main>
+        <Hero/>
+        <Stats/>
+        <About/>
+        <HowItWorks/>
+        <FormSection/>
+      </main>
+      <Footer/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
