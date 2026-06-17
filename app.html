@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>АРМ Госоргана — Подача заявки на экспертизу</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+    }
+    .fade-in { animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ── Mock data ── */
+const SPHERES = ['Телекоммуникации', 'Аэрокосмос', 'Госуслуги'];
+
+const FUNCTIONS_BY_SPHERE = {
+  Телекоммуникации: ['Выдача лицензий на радиочастоты','Регулирование тарифов операторов','Контроль качества связи','Сертификация оборудования'],
+  Аэрокосмос: ['Лицензирование космической деятельности','Управление орбитальными слотами','Сертификация воздушных судов','Контроль использования воздушного пространства'],
+  Госуслуги: ['Регистрация юридических лиц','Выдача разрешительных документов','Предоставление социальных льгот','Ведение государственных реестров'],
+};
+
+const PROCESSES_BY_SPHERE = {
+  Телекоммуникации: ['Выдача разрешений на строительство базовых станций','Присвоение номерного ресурса операторам','Регистрация абонентских устройств'],
+  Аэрокосмос: ['Выдача свидетельств пилота','Регистрация воздушных судов','Согласование полётных планов'],
+  Госуслуги: ['Выдача лицензий на медицинскую деятельность','Регистрация актов гражданского состояния','Постановка на учёт транспортных средств','Оформление земельных участков в собственность'],
+};
+
+const TARGET_EFFECTS = [
+  'Сокращение срока оказания',
+  'Исключение бумажных документов',
+  'Исключение человеческого фактора (автоматическое решение AI/роботом)',
+  'Межведомственная интеграция ИС',
+];
+
+const APPLICANT = {
+  organ: 'Министерство цифрового развития, инноваций и аэрокосмической промышленности',
+  department: 'Департамент трансформации госуслуг',
+  name: 'Иванов И. И.',
+  email: 'ivanov@gov.kz',
+  phone: '+7 777 777-77-77',
+};
+
+/* ── Icons (inline SVG) ── */
+const Icon = ({ d, size = 16, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d={d} />
+  </svg>
+);
+const ChevronRight = (p) => <Icon {...p} d="M9 18l6-6-6-6" />;
+const XIcon = (p) => <Icon {...p} d="M18 6 6 18M6 6l12 12" />;
+const Upload = (p) => <Icon {...p} d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />;
+const FileCheck = (p) => <Icon {...p} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4" />;
+const Trash2 = (p) => <Icon {...p} d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />;
+const CheckCircle = (p) => <Icon {...p} d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3" />;
+const AlertCircle = (p) => <Icon {...p} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 8v4M12 16h.01" />;
+const InfoIcon = (p) => <Icon {...p} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 16v-4M12 8h.01" />;
+
+/* ── Helper components ── */
+function FieldError({ message }) {
+  if (!message) return null;
+  return (
+    <p className="mt-1 flex items-center gap-1 text-sm text-red-600" role="alert">
+      <AlertCircle size={14} className="shrink-0 text-red-500" />
+      {message}
+    </p>
+  );
+}
+
+function SectionCard({ title, children }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-600">{title}</h2>
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </div>
+  );
+}
+
+function ReadOnlyCard({ label, value, sub }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="text-sm font-semibold text-gray-900 leading-snug">{value}</p>
+      {sub && <p className="mt-1 text-xs text-gray-500">{sub}</p>}
+    </div>
+  );
+}
+
+function Chip({ label, onRemove }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800">
+      {label}
+      <button type="button" onClick={onRemove} className="ml-1 rounded-full text-blue-500 hover:text-blue-900 focus-visible:outline" aria-label={`Убрать ${label}`}>
+        <XIcon size={11} />
+      </button>
+    </span>
+  );
+}
+
+function Toast({ type, message, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4500);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  const cfg = {
+    success: { bg: 'bg-green-50 border-green-300', text: 'text-green-800', icon: <CheckCircle size={18} className="shrink-0 text-green-600" /> },
+    error:   { bg: 'bg-red-50 border-red-300',   text: 'text-red-800',   icon: <AlertCircle size={18} className="shrink-0 text-red-600" /> },
+    info:    { bg: 'bg-blue-50 border-blue-300',  text: 'text-blue-800',  icon: <InfoIcon size={18} className="shrink-0 text-blue-600" /> },
+  }[type];
+
+  return (
+    <div className={`fixed top-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-xl fade-in ${cfg.bg}`} role="alert" aria-live="assertive">
+      {cfg.icon}
+      <p className={`text-sm leading-snug ${cfg.text}`}>{message}</p>
+      <button onClick={onClose} className="ml-auto shrink-0 opacity-50 hover:opacity-100" aria-label="Закрыть"><XIcon size={15} /></button>
+    </div>
+  );
+}
+
+function Dropzone({ label, file, onFile, onRemove, error }) {
+  const inputRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+
+  function handleDrop(e) {
+    e.preventDefault(); setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) validate(f);
+  }
+  function handleChange(e) {
+    const f = e.target.files[0];
+    if (f) validate(f);
+  }
+  function validate(f) {
+    if (!f.name.endsWith('.bpmn')) onFile(null, 'Допускается только файл .bpmn');
+    else onFile(f, null);
+  }
+  function fmt(b) {
+    if (b < 1024) return `${b} Б`;
+    if (b < 1048576) return `${(b/1024).toFixed(1)} КБ`;
+    return `${(b/1048576).toFixed(1)} МБ`;
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-gray-700">{label}</p>
+      {file ? (
+        <div className="flex items-center gap-3 rounded-lg border border-green-300 bg-green-50 px-4 py-3">
+          <FileCheck size={20} className="shrink-0 text-green-600" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-gray-900">{file.name}</p>
+            <p className="text-xs text-gray-500">{fmt(file.size)}</p>
+          </div>
+          <button type="button" onClick={onRemove} className="shrink-0 text-gray-400 hover:text-red-500 focus-visible:outline" aria-label="Удалить файл">
+            <Trash2 size={16} />
+          </button>
+        </div>
+      ) : (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
+          tabIndex={0} role="button" aria-label={`Загрузить: ${label}`}
+          className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors focus-visible:outline ${
+            dragging ? 'border-blue-400 bg-blue-50' : error ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50'
+          }`}
+        >
+          <Upload size={28} className="mb-2 text-gray-400" />
+          <p className="text-sm text-gray-600">Перетащите или <span className="text-blue-600 underline">выберите файл</span></p>
+          <p className="mt-1 text-xs text-gray-400">Только .bpmn</p>
+          <input ref={inputRef} type="file" accept=".bpmn" className="hidden" onChange={handleChange} aria-hidden="true" />
+        </div>
+      )}
+      <FieldError message={error} />
+    </div>
+  );
+}
+
+/* ── Main ── */
+const EMPTY = { sphere:'', functions:[], process:'', toBeTitle:'', effects:[], description:'', asIsFile:null, toBeFile:null };
+const EMPTY_ERR = { sphere:'', functions:'', process:'', toBeTitle:'', effects:'', description:'', asIsFile:'', toBeFile:'' };
+
+function App() {
+  const [form, setForm] = useState(EMPTY);
+  const [errors, setErrors] = useState(EMPTY_ERR);
+  const [submitted, setSubmitted] = useState(false);
+  const [reqNum, setReqNum] = useState('');
+  const [toast, setToast] = useState(null);
+  const [sphereOpen, setSphereOpen] = useState(false);
+  const [funcOpen, setFuncOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSug, setShowSug] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const sphereRef = useRef(null);
+  const funcRef = useRef(null);
+  const sugRef = useRef(null);
+
+  useEffect(() => {
+    function h(e) {
+      if (sphereRef.current && !sphereRef.current.contains(e.target)) setSphereOpen(false);
+      if (funcRef.current && !funcRef.current.contains(e.target)) setFuncOpen(false);
+      if (sugRef.current && !sugRef.current.contains(e.target)) setShowSug(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  function set(field, val) {
+    setForm(f => ({ ...f, [field]: val }));
+    setErrors(e => ({ ...e, [field]: '' }));
+  }
+
+  function selectSphere(s) {
+    setForm(f => ({ ...f, sphere: s, functions: [], process: '' }));
+    setErrors(e => ({ ...e, sphere: '', functions: '', process: '' }));
+    setSphereOpen(false);
+  }
+
+  function toggleFn(fn) {
+    setForm(f => ({ ...f, functions: f.functions.includes(fn) ? f.functions.filter(x=>x!==fn) : [...f.functions, fn] }));
+    setErrors(e => ({ ...e, functions: '' }));
+  }
+
+  function toggleEffect(ef) {
+    setForm(f => ({ ...f, effects: f.effects.includes(ef) ? f.effects.filter(x=>x!==ef) : [...f.effects, ef] }));
+    setErrors(e => ({ ...e, effects: '' }));
+  }
+
+  function handleProcessInput(val) {
+    set('process', val);
+    if (form.sphere && val.length > 0) {
+      const list = (PROCESSES_BY_SPHERE[form.sphere]||[]).filter(p => p.toLowerCase().includes(val.toLowerCase()));
+      setSuggestions(list); setShowSug(list.length > 0);
+    } else setShowSug(false);
+  }
+
+  function setFile(field, file, err) {
+    setForm(f => ({ ...f, [field]: file }));
+    setErrors(e => ({ ...e, [field]: err||'' }));
+  }
+
+  function validate(forSubmit) {
+    const e = { ...EMPTY_ERR }; let ok = true;
+    if (!form.sphere) { e.sphere = 'Выберите сферу деятельности'; ok=false; }
+    if (!form.functions.length) { e.functions = 'Выберите минимум одну функцию'; ok=false; }
+    if (!form.process.trim()) { e.process = 'Укажите кейс / процесс'; ok=false; }
+    if (!form.toBeTitle.trim()) { e.toBeTitle = 'Укажите название TO BE'; ok=false; }
+    if (!form.effects.length) { e.effects = 'Выберите минимум один эффект'; ok=false; }
+    if (!form.description.trim()) { e.description = 'Заполните описание изменений'; ok=false; }
+    if (forSubmit && !form.asIsFile) { e.asIsFile = 'Прикрепите схему AS IS'; ok=false; }
+    if (forSubmit && !form.toBeFile) { e.toBeFile = 'Прикрепите схему TO BE'; ok=false; }
+    setErrors(e); return ok;
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 700));
+    setSaving(false);
+    setToast({ type:'info', message:'Черновик успешно сохранён.' });
+  }
+
+  async function handleSubmit() {
+    if (!validate(true)) { setToast({ type:'error', message:'Проверьте заполнение всех обязательных полей.' }); return; }
+    setSubmitting(true);
+    await new Promise(r => setTimeout(r, 1100));
+    setSubmitting(false);
+    const num = `№${new Date().getFullYear()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    setReqNum(num); setSubmitted(true);
+    setToast({ type:'success', message:`Заявка ${num} отправлена на экспертизу.` });
+  }
+
+  function handleCancel() {
+    setForm(EMPTY); setErrors(EMPTY_ERR); setSubmitted(false); setReqNum('');
+    setToast({ type:'info', message:'Форма очищена.' });
+  }
+
+  const avFunctions = FUNCTIONS_BY_SPHERE[form.sphere] || [];
+
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans">
+      {toast && <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
+
+      {/* Header */}
+      <header className="sticky top-0 z-30 border-b border-gray-200 bg-white shadow-sm">
+        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white text-xs font-bold">ГУ</div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-blue-700">АРМ Сотрудника Госоргана</p>
+            <p className="text-xs text-gray-400">Подсистема реинжиниринга госуслуг</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-4 py-8">
+
+        {/* Breadcrumbs */}
+        <nav className="mb-4 flex items-center gap-1 text-sm text-gray-500" aria-label="Хлебные крошки">
+          <a href="#" className="hover:text-blue-600 hover:underline">Главная</a>
+          <ChevronRight size={14} />
+          <a href="#" className="hover:text-blue-600 hover:underline">Мои заявки</a>
+          <ChevronRight size={14} />
+          <span className="text-gray-900 font-medium" aria-current="page">Создать заявку</span>
+        </nav>
+
+        {/* Title + badge */}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl leading-tight">
+            Подача заявки на экспертизу процесса<br className="hidden sm:block" />
+            <span className="text-blue-600"> (Реинжиниринг)</span>
+          </h1>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${submitted ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-gray-300 bg-gray-100 text-gray-600'}`}>
+            {submitted ? '✓ Отправлено' : '● Черновик'}
+          </span>
+        </div>
+
+        {/* Lifecycle bar */}
+        <div className="mb-8 flex items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white px-5 py-3 shadow-sm">
+          {['Черновик','Регистрация','Экспертиза','Решение'].map((stage, i) => (
+            <React.Fragment key={stage}>
+              {i > 0 && <ChevronRight size={14} className="mx-1 shrink-0 text-gray-300" />}
+              <span className={`whitespace-nowrap text-sm font-medium px-2 py-1 rounded-md ${i === 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'}`}>
+                {stage}
+              </span>
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="space-y-5">
+
+          {/* 1. Applicant */}
+          <SectionCard title="Данные заявителя">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <ReadOnlyCard label="Госорган" value={APPLICANT.organ} />
+              <ReadOnlyCard label="Департамент" value={APPLICANT.department} />
+              <ReadOnlyCard label="Сотрудник" value={APPLICANT.name} sub={`${APPLICANT.email} · ${APPLICANT.phone}`} />
+            </div>
+          </SectionCard>
+
+          {/* 2. Classification */}
+          <SectionCard title="Классификация и контекст">
+            <div className="space-y-5">
+
+              {/* Sphere */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Сфера деятельности <span className="text-red-500">*</span>
+                </label>
+                <div className="relative" ref={sphereRef}>
+                  <button
+                    type="button"
+                    onClick={() => setSphereOpen(o => !o)}
+                    className={`flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm text-left transition-colors focus-visible:outline focus-visible:outline-blue-500 ${errors.sphere ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white hover:border-blue-400'}`}
+                    aria-haspopup="listbox" aria-expanded={sphereOpen}
+                  >
+                    <span className={form.sphere ? 'text-gray-900' : 'text-gray-400'}>{form.sphere || 'Выберите сферу...'}</span>
+                    <ChevronRight size={16} className={`text-gray-400 transition-transform duration-200 ${sphereOpen ? 'rotate-90' : ''}`} />
+                  </button>
+                  {sphereOpen && (
+                    <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl fade-in" role="listbox">
+                      {SPHERES.map(s => (
+                        <li key={s} role="option" aria-selected={form.sphere===s}
+                          onClick={() => selectSphere(s)}
+                          className={`cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-blue-50 ${form.sphere===s ? 'bg-blue-100 font-medium text-blue-800' : 'text-gray-800'}`}>
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <FieldError message={errors.sphere} />
+              </div>
+
+              {/* Functions */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Государственная функция <span className="text-red-500">*</span>
+                </label>
+                {form.functions.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {form.functions.map(fn => <Chip key={fn} label={fn} onRemove={() => toggleFn(fn)} />)}
+                  </div>
+                )}
+                <div className="relative" ref={funcRef}>
+                  <button
+                    type="button"
+                    onClick={() => form.sphere && setFuncOpen(o => !o)}
+                    disabled={!form.sphere}
+                    className={`flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm text-left transition-colors focus-visible:outline ${
+                      !form.sphere ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400' :
+                      errors.functions ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white hover:border-blue-400'
+                    }`}
+                    aria-haspopup="listbox" aria-expanded={funcOpen}
+                  >
+                    <span className="text-gray-400">{form.sphere ? 'Добавить функции...' : 'Сначала выберите сферу'}</span>
+                    <ChevronRight size={16} className={`text-gray-400 transition-transform duration-200 ${funcOpen ? 'rotate-90' : ''}`} />
+                  </button>
+                  {funcOpen && (
+                    <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl fade-in" role="listbox" aria-multiselectable="true">
+                      {avFunctions.map(fn => {
+                        const sel = form.functions.includes(fn);
+                        return (
+                          <li key={fn} role="option" aria-selected={sel}
+                            onClick={() => toggleFn(fn)}
+                            className={`flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-blue-50 ${sel ? 'bg-blue-50 text-blue-800 font-medium' : 'text-gray-800'}`}>
+                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 ${sel ? 'border-blue-600 bg-blue-600' : 'border-gray-300'}`}>
+                              {sel && <span className="block h-2 w-2 rounded-sm bg-white" />}
+                            </span>
+                            {fn}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <FieldError message={errors.functions} />
+              </div>
+
+              {/* Process */}
+              <div>
+                <label htmlFor="process" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Государственный кейс / Процесс <span className="text-red-500">*</span>
+                </label>
+                <div className="relative" ref={sugRef}>
+                  <input id="process" type="text" value={form.process}
+                    onChange={e => handleProcessInput(e.target.value)}
+                    onFocus={() => {
+                      if (form.sphere && form.process) {
+                        const list = (PROCESSES_BY_SPHERE[form.sphere]||[]).filter(p => p.toLowerCase().includes(form.process.toLowerCase()));
+                        setSuggestions(list); setShowSug(list.length > 0);
+                      }
+                    }}
+                    placeholder="Введите или выберите процесс..."
+                    disabled={!form.sphere}
+                    className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors focus-visible:outline focus-visible:outline-blue-500 ${
+                      !form.sphere ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400' :
+                      errors.process ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white hover:border-blue-400'
+                    }`}
+                  />
+                  {showSug && (
+                    <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl fade-in">
+                      {suggestions.map(p => (
+                        <li key={p} onClick={() => { set('process', p); setShowSug(false); }}
+                          className="cursor-pointer px-4 py-2.5 text-sm text-gray-800 hover:bg-blue-50">{p}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <FieldError message={errors.process} />
+              </div>
+
+            </div>
+          </SectionCard>
+
+          {/* 3. Reengineering description */}
+          <SectionCard title="Описание реинжиниринга">
+            <div className="space-y-5">
+
+              <div>
+                <label htmlFor="toBeTitle" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Название процесса в целевом состоянии (TO BE) <span className="text-red-500">*</span>
+                </label>
+                <input id="toBeTitle" type="text" value={form.toBeTitle}
+                  onChange={e => set('toBeTitle', e.target.value)}
+                  placeholder="Например: Автоматизированная выдача лицензий..."
+                  className={`w-full rounded-lg border px-4 py-2.5 text-sm focus-visible:outline focus-visible:outline-blue-500 ${errors.toBeTitle ? 'border-red-400 bg-red-50' : 'border-gray-300 hover:border-blue-400'}`}
+                />
+                <FieldError message={errors.toBeTitle} />
+              </div>
+
+              <fieldset>
+                <legend className="mb-2 text-sm font-medium text-gray-700">
+                  Целевые эффекты <span className="text-red-500">*</span>
+                </legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {TARGET_EFFECTS.map(ef => {
+                    const checked = form.effects.includes(ef);
+                    return (
+                      <label key={ef} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${checked ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleEffect(ef)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-blue-600 focus-visible:outline" />
+                        <span className="text-sm text-gray-800 leading-snug">{ef}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <FieldError message={errors.effects} />
+              </fieldset>
+
+              <div>
+                <label htmlFor="description" className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Краткое описание изменений и сути реинжиниринга <span className="text-red-500">*</span>
+                </label>
+                <textarea id="description" rows={5} value={form.description}
+                  onChange={e => set('description', e.target.value)}
+                  placeholder="Опишите текущее состояние процесса, предлагаемые изменения и ожидаемый результат реинжиниринга..."
+                  className={`w-full resize-y rounded-lg border px-4 py-2.5 text-sm focus-visible:outline focus-visible:outline-blue-500 ${errors.description ? 'border-red-400 bg-red-50' : 'border-gray-300 hover:border-blue-400'}`}
+                />
+                <FieldError message={errors.description} />
+              </div>
+
+            </div>
+          </SectionCard>
+
+          {/* 4. BPMN */}
+          <SectionCard title="BPMN-схемы процесса">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Dropzone label='Схема "КАК ЕСТЬ" (AS IS)' file={form.asIsFile}
+                onFile={(f,e) => setFile('asIsFile',f,e)} onRemove={() => setFile('asIsFile',null,null)} error={errors.asIsFile} />
+              <Dropzone label='Схема "КАК БУДЕТ" (TO BE)' file={form.toBeFile}
+                onFile={(f,e) => setFile('toBeFile',f,e)} onRemove={() => setFile('toBeFile',null,null)} error={errors.toBeFile} />
+            </div>
+          </SectionCard>
+
+          {/* Footer / actions */}
+          {submitted ? (
+            <div className="flex flex-col items-center gap-4 rounded-xl border border-green-300 bg-green-50 px-6 py-10 text-center shadow-sm">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                <CheckCircle size={36} className="text-green-600" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-green-800">Заявка успешно отправлена на экспертизу</p>
+                <p className="mt-1 text-sm text-green-700">Регистрационный номер: <strong className="font-mono">{reqNum}</strong></p>
+              </div>
+              <button type="button" onClick={handleCancel}
+                className="mt-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow transition-colors hover:bg-blue-700 focus-visible:outline">
+                Создать новую заявку
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
+              <button type="button" onClick={handleSubmit} disabled={submitting}
+                className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow transition-colors hover:bg-blue-700 focus-visible:outline disabled:opacity-60">
+                {submitting ? '⏳ Отправка...' : 'Отправить на экспертизу'}
+              </button>
+              <button type="button" onClick={handleSave} disabled={saving}
+                className="rounded-lg border border-gray-300 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus-visible:outline disabled:opacity-60">
+                {saving ? 'Сохранение...' : 'Сохранить черновик'}
+              </button>
+              <button type="button" onClick={handleCancel}
+                className="text-sm text-gray-400 underline underline-offset-2 hover:text-gray-700 focus-visible:outline">
+                Отмена
+              </button>
+            </div>
+          )}
+
+        </div>
+
+        <p className="mt-8 text-center text-xs text-gray-400">
+          QazTech · АРМ сотрудника госоргана · Подсистема реинжиниринга госуслуг
+        </p>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
